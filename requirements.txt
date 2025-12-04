@@ -1,9 +1,6 @@
 streamlit
 openai-whisper
-moviepy==1.0.3     # Mengunci versi MoviePy
+moviepy
 deep-translator
 torch
 ffmpeg-python
-numpy==1.24.4      # Mengunci versi NumPy
-imageio==2.31.1    # Mengunci versi ImageIO
-Pillow==9.5.0      # Mengunci versi Pillow
