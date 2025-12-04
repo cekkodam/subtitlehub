@@ -1,6 +1,6 @@
 streamlit
 openai-whisper
-moviepy
+moviepy.editor
 deep-translator
 torch
 ffmpeg-python
