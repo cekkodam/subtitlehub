@@ -1,5 +1,6 @@
 streamlit
 openai-whisper
-pydub==0.25.1    # Mengunci ke versi pydub yang stabil
+pydub
 deep-translator
 torch
+audioop
