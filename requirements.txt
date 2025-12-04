@@ -1,5 +1,5 @@
 streamlit
 openai-whisper
-pydub             # Pustaka ringan pengganti moviepy
+pydub==0.25.1    # Mengunci ke versi pydub yang stabil
 deep-translator
 torch
