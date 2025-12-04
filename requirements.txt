@@ -1,6 +1,5 @@
 streamlit
 openai-whisper
-moviepy.editor
+pydub             # Pustaka ringan pengganti moviepy
 deep-translator
 torch
-ffmpeg-python
