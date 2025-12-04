@@ -1,6 +1,5 @@
-streamlit
+gradio
 openai-whisper
 pydub
 deep-translator
 torch
-audioop
