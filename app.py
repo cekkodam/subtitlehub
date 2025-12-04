@@ -1,10 +1,16 @@
 import streamlit as st
 import whisper
-from moviepy.editor import VideoFileClip
+from pydub import AudioSegment # Pustaka yang diubah
 from deep_translator import GoogleTranslator
 import os
 import tempfile
 import textwrap
+
+# Konfigurasi Halaman
+st.set_page_config(page_title="AI Video/Audio Translator (Pydub)", page_icon="📝")
+
+st.title("📝 Generator Subtitle AI (Versi Stabil)")
+st.markdown("Menggunakan **OpenAI Whisper** dan **Pydub** untuk pemrosesan video yang stabil di Streamlit Cloud.")
 
 # --- Helper Functions ---
 
@@ -15,73 +21,77 @@ def format_time(seconds):
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02}:{minutes:02}:{seconds:02},{millis:03}"
 
-# Membuat konten SRT
-def create_srt(segments, translated_text):
-    srt_content = ""
+# Fungsi untuk ekstrak audio dari video (menggunakan pydub)
+def extract_audio(video_path):
+    # pydub membutuhkan FFmpeg (diinstal via packages.txt)
+    st.info("Mengekstrak audio dari video menggunakan pydub...")
     
-    # Karena GoogleTranslator mengembalikan string tunggal, 
-    # kita perlu memecahnya kembali berdasarkan segmen. 
-    # Namun, karena ini demo, kita akan membuat SRT dari teks asli 
-    # dan menyediakan terjemahan penuh.
-    # UNTUK SRT TERJEMAHAN: Kami akan menerjemahkan setiap segmen
+    # Menentukan format input
+    input_format = video_path.split('.')[-1]
+    
+    # Load file
+    audio = AudioSegment.from_file(video_path, format=input_format) 
+
+    # Membuat path sementara untuk output MP3
+    audio_path = os.path.join(tempfile.gettempdir(), f"audio_pydub_{os.path.basename(video_path)}.mp3")
+    
+    # Export ke format MP3
+    audio.export(audio_path, format="mp3")
+    return audio_path
+
+# Membuat konten SRT Terjemahan
+def create_srt(segments):
+    srt_content = ""
+    translator = GoogleTranslator(source='auto', target='id')
     
     for i, segment in enumerate(segments):
         start = format_time(segment['start'])
         end = format_time(segment['end'])
         
-        # Terjemahkan per segmen untuk akurasi timing (ini memerlukan waktu lebih lama)
-        translator = GoogleTranslator(source='auto', target='id')
+        # Menerjemahkan per segmen
         translated_segment_text = translator.translate(segment['text'])
         
         srt_content += f"{i + 1}\n"
         srt_content += f"{start} --> {end}\n"
         # Memastikan teks tidak terlalu panjang per baris
-        srt_content += textwrap.fill(translated_segment_text, width=40) + "\n\n"
+        srt_content += textwrap.fill(translated_segment_text, width=45) + "\n\n"
         
     return srt_content
 
-# Fungsi untuk ekstrak audio dari video
-def extract_audio(video_path):
-    video = VideoFileClip(video_path)
-    # Gunakan tempfile untuk nama file yang unik
-    audio_path = os.path.join(tempfile.gettempdir(), f"audio_{os.path.basename(video_path)}.mp3")
-    video.audio.write_audiofile(audio_path, logger=None)
-    return audio_path
-
-# Memuat model Whisper (Menggunakan cache agar hanya dimuat sekali)
+# Memuat model Whisper
 @st.cache_resource
 def load_model():
-    # Model 'base' cepat. Untuk akurasi bahasa Asia yang lebih baik, coba 'small' atau 'medium'.
+    # Menggunakan model 'base'
     return whisper.load_model("base") 
-
-# --- Streamlit UI ---
-
-st.set_page_config(page_title="AI Subtitle Generator", page_icon="📝")
-
-st.title("📝 Generator Subtitle AI (Open Source)")
-st.markdown("Kami menggunakan **OpenAI Whisper** (transkripsi) dan **Google Translator** (terjemahan) untuk solusi multibahasa gratis.")
 
 model = load_model()
 
-uploaded_file = st.file_uploader("Pilih file MP4 atau MP3 (Maksimal 200MB di Streamlit Cloud)", type=["mp4", "mp3"])
+# --- Streamlit UI ---
+
+uploaded_file = st.file_uploader("Pilih file video (MP4) atau audio (MP3)", type=["mp4", "mp3"])
 
 if uploaded_file is not None:
     # Simpan file yang diunggah ke lokasi sementara
-    with tempfile.NamedTemporaryFile(delete=False) as tfile:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{uploaded_file.name.split(".")[-1]}') as tfile:
         tfile.write(uploaded_file.read())
         file_path = tfile.name
     
     st.video(uploaded_file) if "mp4" in uploaded_file.type else st.audio(uploaded_file)
     
     if st.button("Mulai Proses Transkripsi & Terjemahan"):
-        with st.spinner('Sedang memproses... Ini akan memakan waktu 1-2 menit per 1 menit video.'):
+        with st.spinner('Sedang memproses... Harap tunggu (tergantung durasi file)'):
             try:
-                # 1. Ekstrak Audio
-                st.info("Mengekstrak audio...")
-                if uploaded_file.name.endswith('.mp4'):
+                # 1. Cek tipe file & Ekstrak Audio jika perlu
+                file_extension = uploaded_file.name.split('.')[-1].lower()
+                
+                if file_extension == 'mp4':
                     audio_path = extract_audio(file_path)
-                else:
+                elif file_extension == 'mp3':
+                    # Jika sudah MP3, gunakan path file aslinya
                     audio_path = file_path
+                else:
+                    st.error("Format file tidak didukung.")
+                    return
 
                 # 2. Transkripsi
                 st.info("Mentranskripsi audio (AI Whisper)...")
@@ -92,15 +102,13 @@ if uploaded_file is not None:
 
                 # 3. Generate Translated SRT
                 st.info("Menerjemahkan per segmen & membuat file SRT...")
-                
-                # Gunakan st.progress() untuk visual feedback, karena ini proses terlama
-                srt_content = create_srt(result['segments'], None) 
+                srt_content = create_srt(result['segments']) 
                 
                 st.success("File Subtitle Terjemahan Selesai Dibuat!")
                 
                 # --- TAMPILKAN HASIL & DOWNLOAD ---
                 st.subheader("✅ Hasil Subtitle Terjemahan (Indonesia)")
-                st.code(srt_content[:1000] + "...", language="text") 
+                st.code(srt_content[:1500] + "\n...", language="text") 
                 
                 st.download_button(
                     '⬇️ Download Subtitle Terjemahan (.srt)',
@@ -113,11 +121,12 @@ if uploaded_file is not None:
 
 
             except Exception as e:
-                st.error(f"Terjadi kesalahan. Pastikan file tidak terlalu besar atau formatnya benar. Error: {e}")
+                st.error(f"Terjadi kesalahan: {e}. Pastikan file MP4/MP3 yang diunggah valid.")
             
             finally:
                 # Membersihkan file temporary
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                if 'audio_path' in locals() and os.path.exists(audio_path):
+                # Hanya hapus audio_path jika itu adalah file sementara (bukan jika itu adalah file input MP3)
+                if 'audio_path' in locals() and os.path.exists(audio_path) and audio_path != file_path:
                     os.remove(audio_path)
