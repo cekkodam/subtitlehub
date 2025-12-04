@@ -1,6 +1,6 @@
 import streamlit as st
 import whisper
-from pydub import AudioSegment # Pustaka yang diubah
+from pydub import AudioSegment # Pustaka yang diubah: Pydub
 from deep_translator import GoogleTranslator
 import os
 import tempfile
@@ -10,7 +10,7 @@ import textwrap
 st.set_page_config(page_title="AI Video/Audio Translator (Pydub)", page_icon="📝")
 
 st.title("📝 Generator Subtitle AI (Versi Stabil)")
-st.markdown("Menggunakan **OpenAI Whisper** dan **Pydub** untuk pemrosesan video yang stabil di Streamlit Cloud.")
+st.markdown("Menggunakan **OpenAI Whisper** dan **Pydub** untuk pemrosesan video/audio yang stabil.")
 
 # --- Helper Functions ---
 
@@ -23,7 +23,6 @@ def format_time(seconds):
 
 # Fungsi untuk ekstrak audio dari video (menggunakan pydub)
 def extract_audio(video_path):
-    # pydub membutuhkan FFmpeg (diinstal via packages.txt)
     st.info("Mengekstrak audio dari video menggunakan pydub...")
     
     # Menentukan format input
@@ -61,7 +60,7 @@ def create_srt(segments):
 # Memuat model Whisper
 @st.cache_resource
 def load_model():
-    # Menggunakan model 'base'
+    # Menggunakan model 'base' untuk keseimbangan kecepatan dan akurasi
     return whisper.load_model("base") 
 
 model = load_model()
@@ -72,17 +71,20 @@ uploaded_file = st.file_uploader("Pilih file video (MP4) atau audio (MP3)", type
 
 if uploaded_file is not None:
     # Simpan file yang diunggah ke lokasi sementara
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{uploaded_file.name.split(".")[-1]}') as tfile:
+    file_extension = uploaded_file.name.split('.')[-1].lower()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f'.{file_extension}') as tfile:
         tfile.write(uploaded_file.read())
         file_path = tfile.name
     
-    st.video(uploaded_file) if "mp4" in uploaded_file.type else st.audio(uploaded_file)
+    st.video(uploaded_file) if file_extension == 'mp4' else st.audio(uploaded_file)
     
     if st.button("Mulai Proses Transkripsi & Terjemahan"):
+        # Variabel audio_path harus didefinisikan di luar try/except agar bisa diakses di finally
+        audio_path = None
+        
         with st.spinner('Sedang memproses... Harap tunggu (tergantung durasi file)'):
             try:
                 # 1. Cek tipe file & Ekstrak Audio jika perlu
-                file_extension = uploaded_file.name.split('.')[-1].lower()
                 
                 if file_extension == 'mp4':
                     audio_path = extract_audio(file_path)
@@ -90,8 +92,9 @@ if uploaded_file is not None:
                     # Jika sudah MP3, gunakan path file aslinya
                     audio_path = file_path
                 else:
-                    st.error("Format file tidak didukung.")
-                    return
+                    st.error("Format file tidak didukung. Mohon upload MP4 atau MP3.")
+                    # Mengganti 'return' di sini dengan raise error untuk menghindari SyntaxError
+                    raise ValueError("Unsupported file type") 
 
                 # 2. Transkripsi
                 st.info("Mentranskripsi audio (AI Whisper)...")
@@ -120,13 +123,18 @@ if uploaded_file is not None:
                 st.text_area("Teks Asli", result["text"], height=150)
 
 
+            except ValueError as ve:
+                # Menangkap error jika format file tidak didukung
+                if str(ve) != "Unsupported file type":
+                     st.error(f"Terjadi kesalahan pemrosesan: {ve}")
             except Exception as e:
+                # Menangkap error umum lainnya
                 st.error(f"Terjadi kesalahan: {e}. Pastikan file MP4/MP3 yang diunggah valid.")
             
             finally:
                 # Membersihkan file temporary
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                # Hanya hapus audio_path jika itu adalah file sementara (bukan jika itu adalah file input MP3)
-                if 'audio_path' in locals() and os.path.exists(audio_path) and audio_path != file_path:
+                # Membersihkan audio_path jika itu adalah file sementara hasil ekstrak
+                if audio_path and os.path.exists(audio_path) and audio_path != file_path:
                     os.remove(audio_path)
